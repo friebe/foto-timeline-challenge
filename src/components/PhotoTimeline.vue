@@ -8,6 +8,7 @@ interface Photo {
   file: File
   url: string
   date: Date
+  thumbnail?: string
 }
 
 interface Level {
@@ -70,6 +71,7 @@ const levelScore = ref(0)
 const timeBonus = ref(0)
 const showTutorial = ref(true)
 const showDates = ref(false)
+const isMobile = ref(window.innerWidth <= 768)
 
 const currentLevelData = computed(() => levels[currentLevel.value])
 
@@ -77,58 +79,44 @@ const progressPercentage = computed(() => {
   return (timeLeft.value / currentLevelData.value.timeLimit) * 100;
 })
 
-// Neue Funktion zur Bildoptimierung
-const optimizeImage = async (file: File): Promise<{ url: string, date: Date }> => {
-  // EXIF-Daten zuerst extrahieren, da wir das Original-Bild dafür brauchen
-  const exifData = await exifr.parse(file);
-  const date = exifData?.DateTimeOriginal || new Date();
-
-  // Bild in Canvas laden und optimieren
-  const img = new Image();
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-
+// Bildoptimierung
+async function createThumbnail(file: File): Promise<string> {
   return new Promise((resolve) => {
-    img.onload = () => {
-      // Maximale Dimensionen festlegen
-      const MAX_WIDTH = 800;
-      const MAX_HEIGHT = 600;
-      
-      let width = img.width;
-      let height = img.height;
-
-      // Proportionales Verkleinern
-      if (width > height) {
-        if (width > MAX_WIDTH) {
-          height *= MAX_WIDTH / width;
-          width = MAX_WIDTH;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d')!;
+        
+        // Maximale Thumbnail-Größe
+        const maxSize = isMobile.value ? 400 : 800;
+        let width = img.width;
+        let height = img.height;
+        
+        if (width > height) {
+          if (width > maxSize) {
+            height = height * (maxSize / width);
+            width = maxSize;
+          }
+        } else {
+          if (height > maxSize) {
+            width = width * (maxSize / height);
+            height = maxSize;
+          }
         }
-      } else {
-        if (height > MAX_HEIGHT) {
-          width *= MAX_HEIGHT / height;
-          height = MAX_HEIGHT;
-        }
-      }
-
-      // Canvas-Größe setzen
-      canvas.width = width;
-      canvas.height = height;
-
-      // Bild zeichnen
-      ctx?.drawImage(img, 0, 0, width, height);
-
-      // Als JPEG mit reduzierter Qualität exportieren
-      const optimizedUrl = canvas.toDataURL('image/jpeg', 0.7);
-
-      // Speicher freigeben
-      URL.revokeObjectURL(img.src);
-      resolve({ url: optimizedUrl, date });
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.src = e.target?.result as string;
     };
-
-    // Temporäre URL für das Originalbild
-    img.src = URL.createObjectURL(file);
+    reader.readAsDataURL(file);
   });
-};
+}
 
 const movePhotoLeft = (index: number) => {
   if (index > 0) {
@@ -182,6 +170,10 @@ const showGameOver = () => {
 };
 
 const resetLevel = () => {
+  // Cleanup URLs
+  photos.value.forEach(photo => {
+    if (photo.url) URL.revokeObjectURL(photo.url);
+  });
   photos.value = [];
   if (timerInterval.value) clearInterval(timerInterval.value);
   timeLeft.value = 0;
@@ -198,7 +190,6 @@ const handleFolderSelect = async (event: Event) => {
   await loadPhotosForCurrentLevel();
 };
 
-// Optimierte Version der loadPhotosForCurrentLevel Funktion
 const loadPhotosForCurrentLevel = async () => {
   if (!selectedFiles.value) return;
   
@@ -207,35 +198,26 @@ const loadPhotosForCurrentLevel = async () => {
   
   try {
     const files = Array.from(selectedFiles.value);
-    const shuffledFiles = files
-      .filter(file => file.type.startsWith('image/')) // Nur Bilder akzeptieren
-      .sort(() => Math.random() - 0.5);
-    
+    const shuffledFiles = files.sort(() => Math.random() - 0.5);
     const levelFiles = shuffledFiles.slice(0, currentLevelData.value.requiredPhotos);
     
-    // Bilder in Batches verarbeiten
-    const BATCH_SIZE = 2;
-    for (let i = 0; i < levelFiles.length; i += BATCH_SIZE) {
-      const batch = levelFiles.slice(i, i + BATCH_SIZE);
-      const optimizedBatch = await Promise.all(
-        batch.map(async (file) => {
-          try {
-            const { url, date } = await optimizeImage(file);
-            return {
-              id: Date.now() + Math.random(),
-              file,
-              url,
-              date
-            };
-          } catch (error) {
-            console.error('Error processing file:', error);
-            return null;
-          }
-        })
-      );
-      
-      // Erfolgreiche Ergebnisse zum Array hinzufügen
-      photos.value.push(...optimizedBatch.filter(Boolean) as Photo[]);
+    for (const file of levelFiles) {
+      try {
+        const url = URL.createObjectURL(file);
+        const exifData = await exifr.parse(file);
+        const date = exifData?.DateTimeOriginal || new Date();
+        const thumbnail = await createThumbnail(file);
+        
+        photos.value.push({
+          id: Date.now() + Math.random(),
+          file,
+          url,
+          date,
+          thumbnail
+        });
+      } catch (error) {
+        console.error('Error processing file:', error);
+      }
     }
 
     if (photos.value.length === currentLevelData.value.requiredPhotos && !gameStarted.value) {
@@ -283,15 +265,17 @@ const closeTutorial = () => {
   showTutorial.value = false;
 };
 
-// Aufräumen beim Komponentenabbau
+// Cleanup
 onUnmounted(() => {
   if (timerInterval.value) clearInterval(timerInterval.value);
-  // Alle URLs freigeben
   photos.value.forEach(photo => {
-    if (photo.url.startsWith('blob:')) {
-      URL.revokeObjectURL(photo.url);
-    }
+    if (photo.url) URL.revokeObjectURL(photo.url);
   });
+});
+
+// Responsive handling
+window.addEventListener('resize', () => {
+  isMobile.value = window.innerWidth <= 768;
 });
 </script>
 
@@ -435,17 +419,24 @@ onUnmounted(() => {
     </div>
 
     <!-- Photos Stack -->
-    <div v-if="photos.length > 0" class="mt-4 mb-28">
+    <div v-if="photos.length > 0" :class="{'flex flex-col gap-4': isMobile, 'mt-4 mb-28': !isMobile}">
       <draggable
         v-model="photos"
         :disabled="!dragEnabled"
         item-key="id"
-        class="overflow-x-auto snap-x snap-mandatory flex gap-4 pb-6"
+        :class="{
+          'flex flex-col gap-4': isMobile,
+          'overflow-x-auto snap-x snap-mandatory flex gap-4 pb-6': !isMobile
+        }"
         ghost-class="opacity-50"
       >
         <template #item="{ element, index }">
-          <div class="snap-center shrink-0 first:ml-[calc(50%-160px)] last:mr-[calc(50%-160px)]">
-            <div class="w-80 bg-white rounded-xl shadow-xl overflow-hidden transform transition-all duration-300 relative group">
+          <div :class="{
+            'w-full': isMobile,
+            'snap-center shrink-0 first:ml-[calc(50%-160px)] last:mr-[calc(50%-160px)]': !isMobile
+          }">
+            <div class="bg-white rounded-xl shadow-xl overflow-hidden transform transition-all duration-300 relative group"
+                 :class="{ 'w-80': !isMobile }">
               <!-- Position Badge -->
               <div class="absolute top-2 left-2 bg-black/70 text-white px-3 py-1 rounded-full text-sm z-10">
                 Position: {{ index + 1 }}/{{ photos.length }}
@@ -475,9 +466,10 @@ onUnmounted(() => {
 
               <div class="relative">
                 <img 
-                  :src="element.url" 
+                  :src="element.thumbnail || element.url" 
                   :alt="'Photo ' + element.id" 
-                  class="w-full h-56 object-cover"
+                  class="w-full object-cover"
+                  :class="{ 'h-56': !isMobile, 'h-48': isMobile }"
                   draggable="false"
                 >
                 <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
@@ -488,7 +480,7 @@ onUnmounted(() => {
                     </span>
                   </p>
                   <p class="text-sm opacity-75" v-if="index === 0">
-                    Ziehe oder nutze die Pfeile zum Sortieren
+                    {{ isMobile ? 'Ziehe oder nutze die Pfeile zum Sortieren' : 'Ziehe oder nutze die Pfeile zum Sortieren' }}
                   </p>
                 </div>
               </div>
@@ -498,7 +490,7 @@ onUnmounted(() => {
       </draggable>
 
       <!-- Mobile Instructions -->
-      <div class="text-white text-center opacity-75 mt-4">
+      <div class="text-white text-center opacity-75 mt-4" v-if="!isMobile">
         <div class="flex flex-col items-center justify-center gap-2">
           <div class="flex items-center gap-2">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
