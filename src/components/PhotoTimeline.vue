@@ -258,11 +258,6 @@ const startSeasonMode = () => {
   startTimer();
 };
 
-const startCustomMode = () => {
-  gameMode.value = 'custom';
-  resetLevel();
-};
-
 const checkOrder = () => {
   const isCorrect = photos.value.every((photo, index) => {
     if (index === 0) return true;
