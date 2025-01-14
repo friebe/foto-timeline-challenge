@@ -57,6 +57,30 @@ const levels: Level[] = [
   }
 ];
 
+// Jahreszeiten Demo-Bilder
+const seasonImages = [
+  { 
+    url: 'https://images.unsplash.com/photo-1418985991508-e47386d96a71', 
+    season: 'Winter',  // Verschneite Winterlandschaft mit Tannen
+    date: new Date('2023-12-21')
+  },
+  { 
+    url: 'https://images.unsplash.com/photo-1486944670663-93fc84a4e1fa', 
+    season: 'Frühling',  // Kirschblüten und grüne Wiese
+    date: new Date('2023-03-21')
+  },
+  { 
+    url: 'https://images.unsplash.com/photo-1473496169904-658ba7c44d8a', 
+    season: 'Sommer',  // Sonnenblumenfeld unter blauem Himmel
+    date: new Date('2023-06-21')
+  },
+  { 
+    url: 'https://images.unsplash.com/photo-1507371341959-585a53d43f53', 
+    season: 'Herbst',  // Bunter Herbstwald mit roten und gelben Blättern
+    date: new Date('2023-09-21')
+  }
+];
+
 const photos = ref<Photo[]>([])
 const dragEnabled = ref(true)
 const isLoading = ref(false)
@@ -72,6 +96,7 @@ const timeBonus = ref(0)
 const showTutorial = ref(true)
 const showDates = ref(false)
 const isMobile = ref(window.innerWidth <= 768)
+const gameMode = ref<'custom' | 'seasons'>('custom')
 
 const currentLevelData = computed(() => levels[currentLevel.value])
 
@@ -170,7 +195,6 @@ const showGameOver = () => {
 };
 
 const resetLevel = () => {
-  // Cleanup URLs
   photos.value.forEach(photo => {
     if (photo.url) URL.revokeObjectURL(photo.url);
   });
@@ -182,26 +206,18 @@ const resetLevel = () => {
   selectedFiles.value = null;
 };
 
-const handleFolderSelect = async (event: Event) => {
+const handleFileSelect = async (event: Event) => {
   const input = event.target as HTMLInputElement;
   if (!input.files?.length) return;
-  
-  selectedFiles.value = input.files;
-  await loadPhotosForCurrentLevel();
-};
-
-const loadPhotosForCurrentLevel = async () => {
-  if (!selectedFiles.value) return;
   
   isLoading.value = true;
   photos.value = [];
   
   try {
-    const files = Array.from(selectedFiles.value);
-    const shuffledFiles = files.sort(() => Math.random() - 0.5);
-    const levelFiles = shuffledFiles.slice(0, currentLevelData.value.requiredPhotos);
+    const files = Array.from(input.files);
+    const selectedFiles = files.slice(0, currentLevelData.value.requiredPhotos);
     
-    for (const file of levelFiles) {
+    for (const file of selectedFiles) {
       try {
         const url = URL.createObjectURL(file);
         const exifData = await exifr.parse(file);
@@ -229,6 +245,24 @@ const loadPhotosForCurrentLevel = async () => {
   }
 };
 
+const startSeasonMode = () => {
+  gameMode.value = 'seasons';
+  photos.value = seasonImages.map((img, index) => ({
+    id: index,
+    file: new File([], `season-${index}.jpg`),
+    url: img.url,
+    date: img.date,
+    thumbnail: img.url
+  }));
+  gameStarted.value = true;
+  startTimer();
+};
+
+const startCustomMode = () => {
+  gameMode.value = 'custom';
+  resetLevel();
+};
+
 const checkOrder = () => {
   const isCorrect = photos.value.every((photo, index) => {
     if (index === 0) return true;
@@ -251,7 +285,6 @@ const nextLevel = () => {
   if (currentLevel.value < levels.length - 1) {
     currentLevel.value++;
     resetLevel();
-    loadPhotosForCurrentLevel();
   } else {
     alert(`🏆 Glückwunsch! Du hast alle Level geschafft!\nGesamtpunkte: ${score.value}`);
     currentLevel.value = 0;
@@ -286,7 +319,7 @@ window.addEventListener('resize', () => {
       <div class="bg-white rounded-2xl p-6 max-w-md">
         <h2 class="text-2xl font-bold text-indigo-600 mb-4">🎮 Willkommen zur Foto Timeline Challenge!</h2>
         <ol class="space-y-3 text-gray-700 mb-6">
-          <li>1. Wähle einen Ordner mit deinen Fotos</li>
+          <li>1. Wähle zwischen Jahreszeiten-Modus oder eigenen Fotos</li>
           <li>2. Ordne die Bilder nach ihrem Aufnahmedatum</li>
           <li>3. Sei schnell für Extra-Punkte!</li>
           <li>4. Steige Level für Level auf</li>
@@ -390,20 +423,33 @@ window.addEventListener('resize', () => {
       </div>
     </div>
 
-    <!-- Folder Selection -->
-    <div v-if="!gameStarted" class="mb-6">
-      <label
-        class="block w-full p-6 bg-white rounded-2xl shadow-xl cursor-pointer hover:bg-indigo-50 transition-colors duration-200 text-center"
+    <!-- Game Mode Selection -->
+    <div v-if="!gameStarted" class="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <button
+        @click="startSeasonMode"
+        class="p-6 bg-white rounded-2xl shadow-xl hover:bg-indigo-50 transition-colors duration-200 text-center"
       >
         <div class="flex flex-col items-center space-y-4">
           <div class="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center">
-            <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
+            <span class="text-3xl">🌞</span>
           </div>
           <div>
-            <p class="text-lg font-semibold text-gray-700">Wähle deinen Foto-Ordner</p>
-            <p class="text-sm text-gray-500">Klicke hier um zu starten</p>
+            <p class="text-lg font-semibold text-gray-700">Jahreszeiten-Modus</p>
+            <p class="text-sm text-gray-500">Ordne die Jahreszeiten richtig zu</p>
+          </div>
+        </div>
+      </button>
+
+      <label
+        class="block p-6 bg-white rounded-2xl shadow-xl cursor-pointer hover:bg-indigo-50 transition-colors duration-200 text-center"
+      >
+        <div class="flex flex-col items-center space-y-4">
+          <div class="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center">
+            <span class="text-3xl">📸</span>
+          </div>
+          <div>
+            <p class="text-lg font-semibold text-gray-700">Eigene Fotos</p>
+            <p class="text-sm text-gray-500">Wähle deine eigenen Bilder aus</p>
           </div>
         </div>
         <input 
@@ -411,8 +457,7 @@ window.addEventListener('resize', () => {
           class="hidden" 
           accept="image/*" 
           multiple
-          webkitdirectory
-          @change="handleFolderSelect"
+          @change="handleFileSelect"
           :disabled="isLoading"
         />
       </label>
@@ -467,7 +512,7 @@ window.addEventListener('resize', () => {
               <div class="relative">
                 <img 
                   :src="element.thumbnail || element.url" 
-                  :alt="'Photo ' + element.id" 
+                  :alt="gameMode === 'seasons' ? `${element.season} Bild` : `Photo ${element.id}`"
                   class="w-full object-cover"
                   :class="{ 'h-56': !isMobile, 'h-48': isMobile }"
                   draggable="false"
@@ -510,7 +555,7 @@ window.addEventListener('resize', () => {
 
     <!-- Check Button -->
     <button
-      v-if="photos.length === currentLevelData.requiredPhotos"
+      v-if="photos.length > 0"
       @click="checkOrder"
       class="fixed bottom-4 left-4 right-4 max-w-lg mx-auto py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-lg font-semibold rounded-xl hover:from-indigo-700 hover:to-purple-700 transform hover:scale-[1.02] transition-all duration-200 shadow-lg"
     >
