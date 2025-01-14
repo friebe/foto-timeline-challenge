@@ -65,7 +65,7 @@ const seasonImages = [
     date: new Date('2023-12-21')
   },
   { 
-    url: 'https://images.unsplash.com/photo-1486944670663-93fc84a4e1fa', 
+    url: 'https://images.unsplash.com/photo-1713435390128-98f100a69be7', 
     season: 'Frühling',  // Kirschblüten und grüne Wiese
     date: new Date('2023-03-21')
   },
@@ -75,7 +75,7 @@ const seasonImages = [
     date: new Date('2023-06-21')
   },
   { 
-    url: 'https://images.unsplash.com/photo-1507371341959-585a53d43f53', 
+    url: 'https://images.unsplash.com/photo-1604045445705-64b359a1629b', 
     season: 'Herbst',  // Bunter Herbstwald mit roten und gelben Blättern
     date: new Date('2023-09-21')
   }
